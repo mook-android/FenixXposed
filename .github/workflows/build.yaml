@@ -7,16 +7,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - name: Add Android tools to PATH
+        run: |
+          sdkver="$(ls -1 "${ANDROID_SDK_ROOT}/build-tools" | tail -n 1)"
+          echo "${ANDROID_SDK_ROOT}/build-tools/${sdkver}" >> "${GITHUB_PATH}"
       - uses: actions/setup-java@v3
         with:
           java-version: 11
           distribution: temurin
-          cache: gradle
       - uses: gradle/wrapper-validation-action@v1
       - uses: gradle/gradle-build-action@v2
       - run: |
           chmod a+x ./gradlew
           ./gradlew app:assembleRelease
+      - name: Sign
+        if: env.SIGNING_KEYSTORE && env.SIGNING_PASSWORD
+        run: |
+          set -o errexit
+          keystore="$(mktemp --suffix=.jks)"
+          trap "rm -f '${keystore}'" EXIT
+          echo "${SIGNING_KEYSTORE}" | base64 -d > "${keystore}"
+          zipalign -v -p 4 app-release-unsigned.apk app-release-aligned.apk
+          apksigner sign --ks "${keystore}" --ks-pass "env:SIGNING_PASSWORD" --verbose \
+            --in app-release-aligned.apk --out app-release-signed.apk
+          rm app-release-unsigned.apk app-release-aligned.apk
+        env:
+          SIGNING_KEYSTORE: ${{ secrets.ANDROID_SIGNING_KEYSTORE }}
+          SIGNING_PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
+        working-directory: app/build/outputs/apk/release/
       - uses: actions/upload-artifact@v3
         with:
-          path: app/**/*.apk
+          name: FenixXposed.apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

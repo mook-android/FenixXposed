@@ -2,9 +2,14 @@ name: Build
 
 on: [push]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      project_name: ${{ steps.project_name.outputs.PROJECT_NAME }}
     steps:
       - uses: actions/checkout@v3
       - name: Add Android tools to PATH
@@ -27,6 +32,10 @@ jobs:
           fi
         env:
           ref: ${{ github.ref }}
+      - run: echo "::set-output name=PROJECT_NAME::${REPO##*/}"
+        id: project_name
+        env:
+          REPO: ${{ github.repository }}
       - name: Sign
         if: env.SIGNING_KEYSTORE && env.SIGNING_PASSWORD
         run: |
@@ -36,7 +45,7 @@ jobs:
           echo "${SIGNING_KEYSTORE}" | base64 -d > "${keystore}"
           zipalign -v -p 4 app-release-unsigned.apk app-release-aligned.apk
           apksigner sign --ks "${keystore}" --ks-pass "env:SIGNING_PASSWORD" --verbose \
-            --in app-release-aligned.apk --out app-release-signed.apk
+            --in app-release-aligned.apk --out "${{ steps.project_name.outputs.PROJECT_NAME }}.apk"
           rm app-release-unsigned.apk app-release-aligned.apk
         env:
           SIGNING_KEYSTORE: ${{ secrets.ANDROID_SIGNING_KEYSTORE }}
@@ -44,6 +53,29 @@ jobs:
         working-directory: app/build/outputs/apk/release/
       - uses: actions/upload-artifact@v3
         with:
-          name: FenixXposed.apk
+          name: ${{ steps.project_name.outputs.PROJECT_NAME }}.apk
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: ${{ needs.build.outputs.project_name }}.apk
+      - run: mv *.apk "${{ needs.build.outputs.project_name}}-${{ github.ref_name }}.apk"
+      - name: Draft Release
+        run: >
+          gh release create
+          --draft
+          --generate-notes
+          --target "${{ github.sha }}"
+          --title "${{ github.ref_name }}"
+          --repo "${{ github.repository }}"
+          "${{ github.ref_name }}"
+          *.apk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

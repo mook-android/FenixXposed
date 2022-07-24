@@ -19,7 +19,14 @@ jobs:
       - uses: gradle/gradle-build-action@v2
       - run: |
           chmod a+x ./gradlew
-          ./gradlew app:assembleRelease
+          version="${ref#refs/tags/}"
+          if [[ "${ref}" != "${version}" ]]; then
+            ./gradlew app:assembleRelease -P versionString="${version#v}"
+          else
+            ./gradlew app:assembleRelease
+          fi
+        env:
+          ref: ${{ github.ref }}
       - name: Sign
         if: env.SIGNING_KEYSTORE && env.SIGNING_PASSWORD
         run: |

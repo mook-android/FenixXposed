@@ -3,6 +3,7 @@ package io.github.mook.fenixxposed
 import android.content.Context
 import android.content.res.XModuleResources
 import android.util.Log
+import android.view.View
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.IXposedHookZygoteInit
 import de.robv.android.xposed.XC_MethodHook
@@ -29,12 +30,14 @@ class HookEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         // Disable highlighting for What's New
         findAndHookMethod(
-            "org.mozilla.fenix.whatsnew.SharedPreferenceWhatsNewStorage",
+            "mozilla.components.browser.menu.item.BrowserMenuHighlightableItem",
             lpparam.classLoader,
-            "getDaysSinceUpdate",
+            "updateHighlight",
+            View::class.java,
+            Boolean::class.java,
             object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    param.result = 365
+                    param.args[1] = false
                 }
             })
 

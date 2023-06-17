@@ -32,7 +32,7 @@ jobs:
           fi
         env:
           ref: ${{ github.ref }}
-      - run: echo "::set-output name=PROJECT_NAME::${REPO##*/}"
+      - run: echo "PROJECT_NAME=${REPO##*/}" >> "$GITHUB_OUTPUT"
         id: project_name
         env:
           REPO: ${{ github.repository }}

@@ -7,6 +7,7 @@ import android.view.View
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.IXposedHookZygoteInit
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge.hookAllConstructors
 import de.robv.android.xposed.XposedHelpers.*
 import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
 import java.lang.reflect.Proxy
@@ -49,16 +50,7 @@ class HookEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (defaultToolbarMenu != null) {
             if (findFieldIfExists(defaultToolbarMenu, "isPinningSupported") != null) {
                 // Disable highlighting for Install Web App
-                findAndHookConstructor(
-                    defaultToolbarMenu,
-                    Context::class.java,
-                    "mozilla.components.browser.state.store.BrowserStore",
-                    Boolean::class.javaPrimitiveType,
-                    "kotlin.jvm.functions.Function1",
-                    "androidx.lifecycle.LifecycleOwner",
-                    "mozilla.components.concept.storage.BookmarksStorage",
-                    "mozilla.components.feature.top.sites.PinnedSiteStorage",
-                    Boolean::class.javaPrimitiveType,
+                hookAllConstructors(defaultToolbarMenu,
                     object : XC_MethodHook() {
                         override fun afterHookedMethod(param: MethodHookParam) {
                             setBooleanField(
@@ -76,43 +68,34 @@ class HookEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
         }
 
         // Disable the main menu Sync UI
-        findAndHookConstructor(
-            "mozilla.components.browser.menu.item.BrowserMenuImageText",
-            lpparam.classLoader,
-            String::class.java, // label
-            Integer::class.javaPrimitiveType, // imageResource
-            Integer::class.javaPrimitiveType, // iconTintColorResource
-            Integer::class.javaPrimitiveType, // textColorResource
-            Boolean::class.javaPrimitiveType, // isCollapsingMenuLimit
-            Boolean::class.javaPrimitiveType, // isSticky
-            "kotlin.jvm.functions.Function0", // listener
-            object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam?) {
-                    param?.thisObject ?: return
-                    val label = getObjectField(param.thisObject, "label")
-                    Objects.equals(label, "Sign in to sync") || return
-                    try {
-                        val iface = findClass(
-                            "kotlin.jvm.functions.Function0",
-                            lpparam.classLoader
-                        )
-                        val lambda = Proxy.newProxyInstance(
-                            lpparam.classLoader,
-                            arrayOf(iface)
-                        ) { _, _, _ -> false }
-                        callMethod(
-                            param.thisObject,
-                            "setVisible",
-                            arrayOf(iface),
-                            lambda
-                        )
-                        Log.d(TAG, "Hiding menu item $label")
-                    } catch (ex: Throwable) {
-                        Log.d(TAG, "Failed to hide $label:", ex)
+        val classBrowserMenuSignIn = findClassIfExists(
+            "org.mozilla.fenix.components.toolbar.BrowserMenuSignIn",
+            lpparam.classLoader
+        )
+        if (classBrowserMenuSignIn != null) {
+             hookAllConstructors(classBrowserMenuSignIn,
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam?) {
+                        param?.thisObject ?: return
+                        try {
+                            val iface = findClass(
+                                "kotlin.jvm.functions.Function0",
+                                lpparam.classLoader
+                            )
+                            val lambda = Proxy.newProxyInstance(
+                                lpparam.classLoader,
+                                arrayOf(iface)
+                            ) { _, _, _ -> false }
+                            setObjectField(param.thisObject, "visible", lambda)
+                        } catch (ex: Throwable) {
+                            Log.d(TAG, "Failed to hide BrowserMenuSignIn:", ex)
+                        }
                     }
                 }
-            }
-        )
+            )
+        } else {
+            Log.d(TAG, "Failed to locate BrowserMenuSignIn")
+        }
 
         // Hide synced tabs
         findAndHookMethod(
